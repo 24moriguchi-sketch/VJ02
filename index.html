@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SIGNAL Halloween</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@500;800&family=Zen+Kaku+Gothic+New:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0c0812; --pumpkin:#ff6a13; --slime:#a6ff2e; --hex:#8b3dff; --bone:#f3e9d6;
+}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--bone);overflow:hidden;
+  font-family:"Zen Kaku Gothic New","Hiragino Sans",sans-serif}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+.frame{position:fixed;inset:calc(16px + env(safe-area-inset-top,0px)) 16px calc(16px + env(safe-area-inset-bottom,0px));
+  pointer-events:none;display:grid;grid-template-rows:auto 1fr auto;transition:opacity .3s}
+.frame.hidden{opacity:0}
+.top,.bottom{display:flex;justify-content:space-between;align-items:baseline;gap:16px}
+.logo{font-family:Syne,sans-serif;font-weight:800;font-size:clamp(22px,3.2vw,34px);letter-spacing:-.02em;color:var(--pumpkin)}
+.logo small{font-size:.38em;letter-spacing:.12em;color:var(--slime);margin-left:.6em;vertical-align:middle}
+#scene{font-family:Syne,sans-serif;font-weight:500;font-size:14px}
+#lock{color:var(--slime);margin-left:10px}
+#hint{font-size:13px;max-width:38ch;line-height:1.6;opacity:.85}
+.meters{display:grid;gap:6px;font-family:Syne,sans-serif;font-size:10px;letter-spacing:.14em}
+.meter{display:flex;align-items:center;gap:8px}
+.bar{width:min(200px,36vw);height:3px;background:rgba(243,233,214,.15);position:relative}
+.bar i{position:absolute;inset:0 auto 0 0;width:0}
+#fill{background:var(--pumpkin)}
+#lvl{background:var(--hex)}
+/* 操作の通知は画面の右上の隅に小さく。H で文字を隠している時は出さない */
+#toast{position:fixed;right:16px;top:calc(48px + env(safe-area-inset-top,0px));z-index:6;
+  font-size:11px;letter-spacing:.04em;color:var(--bone);opacity:0;transition:opacity .25s;pointer-events:none}
+#toast.on{opacity:.55}
+#start{position:fixed;inset:0;z-index:5;background:var(--bg);display:grid;place-items:center;padding:24px;overflow:auto}
+#start .in{max-width:600px}
+#start .tag{font-family:Syne,sans-serif;font-size:13px;letter-spacing:.3em;color:var(--slime);margin-bottom:10px}
+#start h1{font-family:Syne,sans-serif;font-weight:800;font-size:clamp(72px,16vw,180px);line-height:.85;margin:0 0 28px;
+  letter-spacing:-.05em;color:var(--pumpkin);text-shadow:6px 6px 0 var(--hex)}
+#start p{margin:0 0 28px;line-height:1.8;font-size:15px;max-width:36ch}
+.btns{display:flex;gap:12px;flex-wrap:wrap}
+button{font:inherit;font-weight:700;font-size:15px;padding:13px 26px;cursor:pointer;border:2px solid var(--pumpkin);
+  background:var(--pumpkin);color:var(--bg);border-radius:0}
+button.sub{background:transparent;color:var(--bone);border-color:var(--bone)}
+button:focus-visible{outline:3px solid var(--slime);outline-offset:3px}
+#err{margin-top:16px;font-size:13px;color:var(--slime);min-height:1.4em}
+.keys{margin-top:24px;display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:12px;opacity:.75}
+.keys b{font-family:Syne,sans-serif;color:var(--pumpkin)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="frame" id="frame">
+  <div class="top"><div class="logo">SIGNAL<small>HALLOWEEN</small></div><div><span id="scene"></span><span id="lock"></span></div></div>
+  <div></div>
+  <div class="bottom"><div id="hint"></div>
+    <div class="meters">
+      <div class="meter"><span>NEXT</span><div class="bar"><i id="fill"></i></div></div>
+      <div class="meter"><span>BASS</span><div class="bar"><i id="lvl"></i></div></div>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+<div id="start"><div class="in">
+  <div class="tag">HALLOWEEN EDITION</div>
+  <h1>SIGNAL</h1>
+  <p>カメラに映るDJの手元を、4つの表現に変換します。低音に合わせて画面全体が上下に弾みます。各シーンは最低15秒キープし、その後のキックのタイミングで次のシーンへ切り替わります。</p>
+  <div class="btns"><button id="go">カメラ＋マイクで始める</button><button id="mouse" class="sub">マウスで試す</button></div>
+  <div id="err"></div>
+  <div class="keys">
+    <b>1〜4</b><span>シーンを直接切替</span>
+    <b>Space</b><span>次のシーンへ</span>
+    <b>F</b><span>全画面</span>
+    <b>H</b><span>文字・メーターを隠す（本番用）</span>
+    <b>M</b><span>左右反転の切替</span>
+    <b>L</b><span>自動切替をロック</span>
+    <b>↑ ↓</b><span>音の感度</span>
+    <b>V</b><span>Spectrum の映像の見せ方を切替</span>
+    <b>C / A</b><span>カメラ / 音声入力を切替</span>
+  </div>
+</div></div>
+<video id="v" playsinline muted style="display:none"></video>
+<script>
+const $=id=>document.getElementById(id);
+const cv=$('c'),ctx=cv.getContext('2d');
+const video=$('v');
+const sceneEl=$('scene'),hintEl=$('hint'),fill=$('fill'),lvlEl=$('lvl'),frameEl=$('frame'),lockEl=$('lock');
+const GW=128,GH=96,HIST=60;
+const sm=document.createElement('canvas');sm.width=GW;sm.height=GH;
+const sx=sm.getContext('2d',{willReadFrequently:true});
+const C={bg:'#0c0812',pumpkin:'#ff6a13',slime:'#a6ff2e',hex:'#8b3dff',bone:'#f3e9d6'};
+
+let W,H,vig,useCam=false,mirror=true,uiOn=true,lock=false,sens=1;
+let mouse={x:.5,y:.5};
+let lum=new Float32Array(GW*GH),prev=null,motion=new Float32Array(GW*GH),hist=[],lo=0,hi=1;
+let scene=0,flash=0,running=false,sceneT=0;
+const HOLD=15000; // 1シーンを最低キープする時間（ミリ秒）
+
+const SCENES=[
+  {name:'1 / 4  Dot',hint:'キックのたびに点が上へ跳ね、縦に伸びます'},
+  {name:'2 / 4  Time',hint:'画面の上と下で時間がずれています。キックで上へ弾みます'},
+  {name:'3 / 4  Pulse',hint:'キックのたびに、下から上へ波が駆け上がります'},
+  {name:'4 / 4  Spectrum',hint:'伸びた棒の中から手元が見えます（Vキーで反転）'}
+];
+
+function resize(){
+  const d=devicePixelRatio||1;W=innerWidth;H=innerHeight;cv.width=W*d;cv.height=H*d;ctx.setTransform(d,0,0,d,0,0);
+  vig=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.3,W/2,H/2,Math.max(W,H)*.75);
+  vig.addColorStop(0,'rgba(12,8,18,0)');vig.addColorStop(1,'rgba(12,8,18,.85)');
+}
+addEventListener('resize',resize);resize();
+
+/* ---------- 音 ---------- */
+let actx=null,analyser=null,fbuf=null,tbuf=null,wGain=4,tNow=0,micStream=null,micId=null;
+let level=0,bass=0,bassAvg=.05,beat=0,lastBeat=0;
+// 自動ゲイン用：低音・全体音量それぞれの「最近の最大値」と「底」を追いかけて0〜1に引き伸ばす
+let bPeak=.05,bFloor=0,lPeak=.05,lFloor=0,fresh=true,prevLow=null,flux=0,fluxAvg=.01;
+const clamp01=v=>Math.min(1,Math.max(0,v));
+function readAudio(t){
+  if(analyser){
+    analyser.getByteFrequencyData(fbuf);
+    // 波形も取り、振れ幅が小さくても見えるよう自動ゲイン
+    analyser.getByteTimeDomainData(tbuf);
+    let wp=0;for(let i=0;i<tbuf.length;i+=4){const v=Math.abs(tbuf[i]-128)/128;if(v>wp)wp=v}
+    const tg=Math.min(25,1/Math.max(.02,wp));wGain=tg<wGain?tg:wGain+(tg-wGain)*.02;
+    const hz=actx.sampleRate/analyser.fftSize;
+    // 外のスピーカー＋PCマイクだと40Hz付近はほぼ録れないので、帯域を30〜250Hzに広げる
+    const b0=Math.max(1,Math.round(30/hz)),b1=Math.max(b0+1,Math.round(250/hz));
+    let s=0,fx=0;
+    if(!prevLow)prevLow=new Float32Array(b1+1);
+    for(let i=b0;i<=b1;i++){const v=fbuf[i]/255;s+=v;fx+=Math.max(0,v-prevLow[i]);prevLow[i]=v}
+    const rb=s/(b1-b0+1);
+    const top=Math.min(fbuf.length,Math.round(8000/hz));let a=0;
+    for(let i=1;i<top;i++)a+=fbuf[i];
+    const rl=a/(top*255);
+    // 最大値はゆっくり下がり、底はゆっくり上がる → 小さい音でも振れ幅いっぱいに使える
+    // 起動直後は、今の環境ノイズをそのまま「底」として覚える
+    if(fresh){bFloor=rb;lFloor=rl;bPeak=rb+.05;lPeak=rl+.05;fresh=false}
+    bPeak=Math.max(rb,bPeak*.996,.02);bFloor=rb<bFloor?rb:bFloor+(rb-bFloor)*.01;
+    lPeak=Math.max(rl,lPeak*.996,.02);lFloor=rl<lFloor?rl:lFloor+(rl-lFloor)*.01;
+    // 振れ幅の下限を大きめにとり、底から少し上（.03）まではノイズとして無視する
+    // → 静かな時の小さな揺れを目一杯に引き伸ばさない
+    const nb=clamp01((rb-bFloor-.03)/Math.max(.14,bPeak-bFloor)*sens);
+    const nl=clamp01((rl-lFloor-.02)/Math.max(.12,lPeak-lFloor)*sens);
+    bass=bass*.6+nb*.4;level=level*.7+nl*.3;
+    // キックの「立ち上がり」で拍を取る。ある程度の低音が実際に鳴っている時だけ
+    flux=fx;fluxAvg=fluxAvg*.95+flux*.05;
+    if(flux>fluxAvg*1.7/Math.sqrt(sens)&&flux>.07&&nb>.35&&t-lastBeat>260){beat=1;lastBeat=t}else beat*=.86;
+    return;
+  }
+  // マイクなし：124BPMのデモ拍
+  const ph=(t/(60000/124))%1;bass=Math.max(0,1-ph*4)*.9;level=.35+bass*.4;
+  bassAvg=bassAvg*.96+bass*.04;
+  if(bass>bassAvg*1.3+.04&&bass>.2&&t-lastBeat>250){beat=1;lastBeat=t}else beat*=.86;
+}
+// 全シーン共通の「弾み」。キックで上に蹴り上げ、バネで戻る（少し行き過ぎて揺り返す）
+// 低音が鳴り続けている間は、少し持ち上がった位置で揺れる
+let kickY=0,kickV=0;
+function updKick(){
+  const rest=-bass*.012;
+  if(beat===1)kickV-=.026*(.5+bass);
+  kickV+=(rest-kickY)*.22;kickV*=.7;kickY+=kickV;
+}
+// 高さyにある要素の上下ずれ。底辺は動かず、上へ行くほど大きく持ち上がる（下に隙間ができない）
+// 明るさによる差は控えめにして、人の形が崩れないようにする
+function bob(y,b){return Math.min(0,kickY)*H*Math.max(0,1-y/H)*(.75+b*.25)}
+
+/* ---------- 映像 ---------- */
+function sample(t){
+  if(useCam&&video.readyState>=2){
+    const vr=video.videoWidth/video.videoHeight,r=GW/GH;let w=GW,h=GH;
+    if(vr>r){w=GH*vr}else{h=GW/vr}
+    sx.save();if(mirror){sx.translate(GW,0);sx.scale(-1,1)}
+    sx.drawImage(video,(GW-w)/2,(GH-h)/2,w,h);sx.restore();
+  }else{ // マウス用の擬似映像
+    sx.fillStyle='#111';sx.fillRect(0,0,GW,GH);
+    const g=sx.createRadialGradient(mouse.x*GW,mouse.y*GH,2,mouse.x*GW,mouse.y*GH,30);
+    g.addColorStop(0,'#fff');g.addColorStop(1,'rgba(255,255,255,0)');sx.fillStyle=g;sx.fillRect(0,0,GW,GH);
+    sx.fillStyle='#bbb';sx.beginPath();sx.arc(GW/2+Math.sin(t/900)*26,GH*.62,18,0,6.28);sx.fill();
+  }
+  const d=sx.getImageData(0,0,GW,GH).data,N=GW*GH;
+  const raw=new Float32Array(N);let mn=1,mx=0;
+  for(let i=0;i<N;i++){const v=(d[i*4]*.3+d[i*4+1]*.59+d[i*4+2]*.11)/255;raw[i]=v;if(v<mn)mn=v;if(v>mx)mx=v}
+  let total=0;
+  if(prev)for(let i=0;i<N;i++){const df=Math.abs(raw[i]-prev[i]);motion[i]=df>.08?Math.min(1,df*3.5):motion[i]*.7;total+=df>.08?df:0}
+  prev=raw;
+  // 暗いクラブでも見えるよう自動レベル補正
+  lo=lo*.9+mn*.1;hi=hi*.9+mx*.1;const rng=Math.max(.08,hi-lo);
+  const g=new Float32Array(N);
+  for(let i=0;i<N;i++)g[i]=Math.min(1,Math.max(0,(raw[i]-lo)/rng));
+  lum=g;hist.unshift(g);if(hist.length>HIST)hist.pop();
+  return total/N;
+}
+function lumAt(gx,yf){
+  const y0=Math.min(GH-1,yf|0),y1=Math.min(GH-1,y0+1),f=yf-(yf|0);
+  return lum[y0*GW+gx]*(1-f)+lum[y1*GW+gx]*f;
+}
+
+/* ---------- シーン ---------- */
+// 1: 点。キックで明るい点ほど高く跳ね、縦に伸びる
+function drawDot(){
+  const step=Math.max(W,H)/88,cols=Math.ceil(W/step),rows=Math.ceil(H/step),pulse=1+bass*.7,KY=kickY*H,str=1+Math.max(0,-kickY)*3;
+  for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){
+    const gx=Math.min(GW-1,((x+.5)*step/W*GW)|0),gy=Math.min(GH-1,((y+.5)*step/H*GH)|0),i=gy*GW+gx;
+    const b=lum[i],m=motion[i];
+    const r=(b*step*.5+m*step*.35)*pulse;
+    if(r<.7)continue;
+    const off=m*step*1.5+beat*step*.3;
+    ctx.fillStyle=m>.25?C.slime:(beat>.5&&b>.55?C.hex:C.pumpkin);
+    ctx.beginPath();
+    ctx.ellipse(x*step+step/2+(Math.random()-.5)*off,y*step+step/2+(Math.random()-.5)*off+bob(y*step+step/2,b),r,r*str,0,0,6.28);
+    ctx.fill();
+  }
+}
+
+// 3: 時間のずれ。キックで行ごとに上へ跳ねる
+function drawTime(){
+  const cw=W/GW,ch=H/GH,KY=kickY*H;
+  for(let gy=0;gy<GH;gy++){
+    const f=hist[Math.min(hist.length-1,Math.floor(gy/GH*hist.length))];
+    for(let gx=0;gx<GW;gx++){
+      const i=gy*GW+gx,v=f[i];
+      if(v<.35)continue;
+      ctx.fillStyle=motion[i]>.3?C.slime:(beat>.5&&v>.75?C.hex:(v>.85?C.bone:C.pumpkin));
+      const s=v*(1+bass*.15);
+      ctx.fillRect(gx*cw+cw*(1-s)/2,gy*ch+bob(gy*ch,v),cw*s,ch*(1+Math.max(0,-kickY)*2)+.5);
+    }
+  }
+}
+
+// 1行ぶんの輪郭線を引く共通処理。yAt(gx,b,m) が各点のy座標を返す
+function rowPath(yf,yAt){
+  const gy=yf|0;let hot=0,bsum=0;
+  ctx.beginPath();
+  for(let gx=0;gx<GW;gx++){
+    const m=motion[gy*GW+gx],b=lumAt(gx,yf);hot+=m;bsum+=b;
+    const px=gx/(GW-1)*W,py=yAt(gx,b,m);
+    gx?ctx.lineTo(px,py):ctx.moveTo(px,py);
+  }
+  return {hot,bavg:bsum/GW};
+}
+
+// 4: キックのたびに下から上へ波が駆け上がる
+function drawPulse(t){
+  const rows=150,gap=H/rows,amp=H*.04,age=(t-lastBeat)/1000;
+  const front=age*2.4,fade=Math.max(0,1-age*1.1);
+  ctx.lineWidth=Math.max(1,gap*.35);ctx.lineJoin='round';
+  for(let r=0;r<rows;r++){
+    const pos=1-r/(rows-1),d=pos-front,bump=Math.exp(-d*d*70)*fade;
+    const yf=r/rows*(GH-1),base=r*gap+gap/2;
+    const lift=(bump*H*.11+bass*H*.022)*Math.max(0,1-base/H);
+    const KY=kickY*H;
+    const {hot,bavg}=rowPath(yf,(gx,b,m)=>base-b*amp-lift*(.25+b)+bob(base,b)+Math.sin(gx*.7+t/60)*m*gap*3);
+    ctx.globalAlpha=.3+.7*Math.min(1,bavg*1.6+bump+hot*.05);
+    ctx.strokeStyle=hot>8?C.slime:(bump>.45?C.hex:C.pumpkin);
+    ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+}
+
+// 6: スペクトラム。左が低音→右が高音。画面の下から上へ棒がズカズカ伸びる（カメラは使わない）
+const SPN=40,spV=new Float32Array(SPN),spPk=new Float32Array(SPN),spFl=new Float32Array(SPN),spMx=new Float32Array(SPN);
+let spFresh=true;
+function specBands(){
+  const out=new Float32Array(SPN);
+  if(analyser&&fbuf){
+    const hz=actx.sampleRate/analyser.fftSize,lo=30,hi=14000;
+    for(let k=0;k<SPN;k++){
+      // 対数で帯域を分ける（人の耳の感じ方に近い）
+      const f0=lo*Math.pow(hi/lo,k/SPN),f1=lo*Math.pow(hi/lo,(k+1)/SPN);
+      const i0=Math.max(1,Math.floor(f0/hz)),i1=Math.max(i0,Math.ceil(f1/hz));
+      let s=0,n=0;for(let i=i0;i<=i1&&i<fbuf.length;i++){s+=fbuf[i];n++}
+      const v=n?s/n/255:0;
+      // 帯域ごとに「無音の底」と「最近の最大」を追う → マイクの低音・高音の録れ方の差をならす
+      if(spFresh){spFl[k]=v;spMx[k]=v+.1}
+      spFl[k]=v<spFl[k]?v:spFl[k]+(v-spFl[k])*.008;
+      spMx[k]=Math.max(v,spMx[k]*.997,spFl[k]+.22);
+      out[k]=clamp01((v-spFl[k]-.05)/(spMx[k]-spFl[k])*sens);
+    }
+    spFresh=false;
+  }else{ // マイクなし：デモ用の合成スペクトラム
+    for(let k=0;k<SPN;k++){
+      const u=k/(SPN-1);
+      out[k]=clamp01(bass*Math.pow(1-u,1.6)*1.1+(.25+Math.random()*.45)*(.4+level*.6)*(.4+.6*Math.sin(u*9+tNow/300)**2));
+    }
+  }
+  return out;
+}
+// カメラ映像をハロウィン色（紫の影＋オレンジ）のデュオトーンにした画面サイズの絵
+const camC=document.createElement('canvas'),cctx=camC.getContext('2d');
+let specMode=0; // 0: 棒の中に映像が見える / 1: 映像の上に棒を黒く抜く
+function updCam(){
+  const w=Math.max(2,W>>1),h=Math.max(2,H>>1);
+  if(camC.width!==w||camC.height!==h){camC.width=w;camC.height=h}
+  cctx.save();cctx.fillStyle='#000';cctx.fillRect(0,0,w,h);
+  cctx.filter='grayscale(1) contrast(1.7) brightness(1.15)';
+  if(useCam&&video.readyState>=2){
+    if(mirror){cctx.translate(w,0);cctx.scale(-1,1)}
+    const vr=video.videoWidth/video.videoHeight,r=w/h;let dw=w,dh=h;
+    if(vr>r)dw=h*vr;else dh=w/vr;
+    cctx.drawImage(video,(w-dw)/2,(h-dh)/2,dw,dh);
+  }else cctx.drawImage(sm,0,0,w,h);
+  cctx.restore();
+  cctx.globalCompositeOperation='multiply';cctx.fillStyle=C.pumpkin;cctx.fillRect(0,0,w,h);
+  cctx.globalCompositeOperation='screen';cctx.fillStyle='#24103a';cctx.fillRect(0,0,w,h);
+  cctx.globalCompositeOperation='source-over';
+}
+function drawSpec(){
+  const v=specBands(),bw=W/SPN,maxH=H*.9,seg=Math.max(5,H/46),x0=bw*.11,w=bw*.78;
+  for(let k=0;k<SPN;k++){
+    // 伸びるのは一瞬、落ちるのはゆっくり
+    spV[k]=v[k]>spV[k]?v[k]:spV[k]*.84;
+    spPk[k]=spV[k]>spPk[k]?spV[k]:Math.max(0,spPk[k]-.008);
+  }
+  const col=f=>f>.72?C.slime:(f>.42?C.hex:C.pumpkin);
+  updCam();
+  if(specMode===0){
+    // 棒の外はうっすら、棒の中だけ映像がくっきり見える
+    ctx.globalAlpha=.1;ctx.drawImage(camC,0,0,W,H);ctx.globalAlpha=1;
+    ctx.save();ctx.beginPath();
+    for(let k=0;k<SPN;k++){const h=spV[k]*maxH,x=k*bw+x0;for(let y=0;y<h;y+=seg)ctx.rect(x,H-y-seg+2,w,seg-3)}
+    ctx.clip();ctx.drawImage(camC,0,0,W,H);
+    // 上の方の段だけ色を薄く重ねて、イコライザーらしさを残す
+    ctx.globalAlpha=.4;
+    for(let k=0;k<SPN;k++){const h=spV[k]*maxH,x=k*bw+x0;for(let y=maxH*.42;y<h;y+=seg){ctx.fillStyle=col(y/maxH);ctx.fillRect(x,H-y-seg+2,w,seg-3)}}
+    ctx.globalAlpha=1;ctx.restore();
+  }else{
+    // 映像を全面に出し、棒の部分を黒く抜く。各段の上辺だけ色を付ける
+    ctx.globalAlpha=.9;ctx.drawImage(camC,0,0,W,H);ctx.globalAlpha=1;
+    for(let k=0;k<SPN;k++){
+      const h=spV[k]*maxH,x=k*bw+x0;
+      for(let y=0;y<h;y+=seg){
+        const top=H-y-seg+2;
+        ctx.fillStyle=C.bg;ctx.fillRect(x,top,w,seg-3);
+        ctx.fillStyle=col(y/maxH);ctx.fillRect(x,top,w,2);
+      }
+    }
+  }
+  for(let k=0;k<SPN;k++){
+    const p=spPk[k]*maxH,x=k*bw+x0;
+    if(p>seg){ctx.fillStyle=C.bone;ctx.fillRect(x,H-p-seg-2,w,3)}
+  }
+}
+
+/* ---------- ループ ---------- */
+function loop(t){
+  tNow=t;const m=sample(t);readAudio(t);updKick();
+  ctx.fillStyle=C.bg;ctx.fillRect(0,0,W,H);
+  if(beat>.05){ctx.fillStyle=`rgba(139,61,255,${beat*.16})`;ctx.fillRect(0,0,W,H)}
+  [drawDot,drawTime,drawPulse,drawSpec][scene](t);
+  ctx.fillStyle=vig;ctx.fillRect(0,0,W,H);
+  // 最低15秒はキープ。15秒を過ぎたら次のキックで切替（キックが来なければ+5秒で切替）
+  if(!sceneT)sceneT=t;
+  const el=t-sceneT;
+  fill.style.width=(Math.min(1,el/HOLD)*100)+'%';lvlEl.style.width=(bass*100)+'%';lvlEl.style.background=beat>.5?C.slime:'';
+  if(!lock&&el>=HOLD&&(beat===1||el>=HOLD+5000))next();
+  if(flash>0){ctx.fillStyle=`rgba(255,106,19,${flash*.85})`;ctx.fillRect(0,0,W,H);flash-=.06}
+  requestAnimationFrame(loop);
+}
+function next(n){scene=n==null?(scene+1)%SCENES.length:n;sceneT=performance.now();flash=1;setText()}
+function setText(){sceneEl.textContent=SCENES[scene].name;hintEl.textContent=SCENES[scene].hint;lockEl.textContent=lock?'LOCK':''}
+let tt;function toast(s){if(!uiOn)return;const el=$('toast');el.textContent=s;el.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>el.classList.remove('on'),1800)}
+
+/* ---------- デバイス ---------- */
+let camStream=null,camId=null;
+async function openCam(id){
+  if(camStream)camStream.getTracks().forEach(t=>t.stop());
+  const v={width:{ideal:1280},height:{ideal:720}};if(id)v.deviceId={exact:id};
+  camStream=await navigator.mediaDevices.getUserMedia({video:v,audio:false});
+  video.srcObject=camStream;await video.play();useCam=true;
+  const tr=camStream.getVideoTracks()[0];camId=tr.getSettings().deviceId;return tr.label;
+}
+async function openMic(id){
+  if(micStream)micStream.getTracks().forEach(t=>t.stop());
+  const a={echoCancellation:false,noiseSuppression:false,autoGainControl:false};if(id)a.deviceId={exact:id};
+  micStream=await navigator.mediaDevices.getUserMedia({audio:a,video:false});
+  if(!actx)actx=new AudioContext();await actx.resume();
+  const src=actx.createMediaStreamSource(micStream);
+  // マイク入力を3倍に持ち上げてから解析。dBレンジも小さい音寄りに
+  const boost=actx.createGain();boost.gain.value=2;
+  analyser=actx.createAnalyser();analyser.fftSize=2048;analyser.smoothingTimeConstant=.25;
+  analyser.minDecibels=-100;analyser.maxDecibels=-40;
+  src.connect(boost);boost.connect(analyser);fbuf=new Uint8Array(analyser.frequencyBinCount);tbuf=new Uint8Array(analyser.fftSize);
+  prevLow=null;fresh=true;spFresh=true;
+  const tr=micStream.getAudioTracks()[0];micId=tr.getSettings().deviceId;return tr.label;
+}
+async function cycleDevice(kind){
+  const isCam=kind==='videoinput';
+  try{
+    if(!isCam&&!micStream){toast('音声入力: '+(await openMic()));return}
+    const list=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind===kind);
+    if(list.length<2){toast('切り替え先のデバイスがありません');return}
+    const cur=isCam?camId:micId,idx=list.findIndex(d=>d.deviceId===cur),nx=list[(idx+1)%list.length];
+    const label=isCam?await openCam(nx.deviceId):await openMic(nx.deviceId);
+    toast((isCam?'カメラ: ':'音声入力: ')+(label||nx.label||'不明'));
+  }catch(e){toast('切り替えに失敗しました')}
+}
+
+function begin(){$('start').style.display='none';setText();if(!running){running=true;requestAnimationFrame(loop)}}
+$('go').onclick=async()=>{
+  try{await openCam()}catch(e){$('err').textContent='カメラを起動できませんでした。ブラウザのカメラ許可を確認するか、「マウスで試す」を押してください。';return}
+  let micOk=true;try{await openMic()}catch(e){micOk=false}
+  begin();if(!micOk)toast('マイクが使えないため、デモの拍で動いています（Aキーで再試行）');
+};
+$('mouse').onclick=()=>{useCam=false;begin();toast('デモの拍で動いています（Aキーでマイクを使用）')};
+addEventListener('pointermove',e=>{mouse.x=e.clientX/W;mouse.y=e.clientY/H});
+addEventListener('keydown',e=>{
+  if(!running)return;
+  const k=e.key.toLowerCase();
+  if(k.length===1&&k>='1'&&k<=String(SCENES.length))next(+k-1);
+  else if(k===' '){e.preventDefault();next()}
+  else if(k==='h'){uiOn=!uiOn;if(!uiOn)$('toast').classList.remove('on');frameEl.classList.toggle('hidden',!uiOn);document.body.style.cursor=uiOn?'':'none'}
+  else if(k==='f'){document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()}
+  else if(k==='m'){mirror=!mirror;toast(mirror?'左右反転: ON':'左右反転: OFF')}
+  else if(k==='l'){lock=!lock;if(!lock)sceneT=performance.now();setText();toast(lock?'自動切替をロック':'自動切替を再開')}
+  else if(k==='arrowup'){e.preventDefault();sens=Math.min(8,sens*1.25);toast('音の感度 ×'+sens.toFixed(2))}
+  else if(k==='arrowdown'){e.preventDefault();sens=Math.max(.2,sens/1.25);toast('音の感度 ×'+sens.toFixed(2))}
+  else if(k==='v'){specMode^=1;toast(specMode?'Spectrum: 映像の上に棒を抜く':'Spectrum: 棒の中に映像')}
+  else if(k==='c')cycleDevice('videoinput');
+  else if(k==='a')cycleDevice('audioinput');
+});
+</script>
+</body>
+</html>
